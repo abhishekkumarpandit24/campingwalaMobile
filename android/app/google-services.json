@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "592611999621",
+    "project_id": "campingwala-cbe17",
+    "storage_bucket": "campingwala-cbe17.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:592611999621:android:200aadb792e97eba2b8eec",
+        "android_client_info": {
+          "package_name": "com.campingwalamobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "592611999621-a853v3th4u3843g3fduh48qj9o6636u1.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.campingwalamobile",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "592611999621-lol3i82jps5nb2hlsufpq0lbsjsl2ap7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDiO41nIveUu3KndxEpgbFkbJiQOFPy8qg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "592611999621-lol3i82jps5nb2hlsufpq0lbsjsl2ap7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
