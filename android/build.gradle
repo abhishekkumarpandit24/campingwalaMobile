@@ -16,10 +16,12 @@ buildscript {
         classpath("com.android.tools.build:gradle")
         classpath("com.facebook.react:react-native-gradle-plugin")
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
-        classpath("com.google.gms:google-services:4.4.0")
+        classpath("com.google.gms:google-services:4.3.15") // ✅ use only one
     }
-    
 }
 
 apply plugin: "com.facebook.react.rootproject"
-apply plugin: 'com.google.gms.google-services'
+
+// ❌ DO NOT apply google-services plugin here
+// apply plugin: 'com.google.gms.google-services' <-- remove this line
+

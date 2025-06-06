@@ -1,34 +1,41 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import auth from '@react-native-firebase/auth';
-import firebase from '@react-native-firebase/app';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_URL } from '../config/config';
+import { Alert } from 'react-native';
 
 interface AuthContextType {
   user: any;
   loading: boolean;
   token: string | null;
+  userType: string | null;
+  setUserType: (type: string) => void;
   logout: () => Promise<void>;
-  updateUserProfile: (userData: any) => Promise<void>;
-  signInWithPhoneNumber: (phoneNumber: string, otp?: string) => Promise<{ success: boolean } | undefined>;
+  registerUser: (userData: any) => Promise<{ success: boolean } | undefined>;
+  sendOtpToEmail: any;
+  verifyEmailOtp: any;
+  loginUser: ({email, password}: any) => Promise<{ success: boolean } | undefined>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
   token: null,
+  userType: null,
+  setUserType: () => {},
   logout: async () => {},
-  updateUserProfile: async (userData: any) => {},
-  signInWithPhoneNumber: async (phoneNumber: string, otp?: string) => Promise.resolve({ success: false })
+  registerUser: async (userData: any) => Promise.resolve({ success: false }),
+  sendOtpToEmail: async (email: any) => Promise.resolve({ success: false }),
+  verifyEmailOtp: async (email: any, code: any) => Promise.resolve({ success: false }),
+  loginUser: async ({email, password}: any) => Promise.resolve({ success: false })
 });
 
-const firebaseAuth = auth();
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
+  const [userType, setUserType] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<any>(null);
 
   // Load stored authentication data on app start
@@ -38,6 +45,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         console.log("Loading auth data from storage...");
         const storedToken = await AsyncStorage.getItem('userToken');
         const storedUserData = await AsyncStorage.getItem('userData');
+        const storedUserType = await AsyncStorage.getItem('userType');
         
         console.log("Loaded from storage - Token:", storedToken ? "exists" : "not found");
         console.log("Loaded from storage - User data:", storedUserData ? "exists" : "not found");
@@ -49,6 +57,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (storedUserData) {
           setUser(JSON.parse(storedUserData));
         }
+        
+        if (storedUserType) {
+          setUserType(storedUserType);
+        }
       } catch (error) {
         console.error('Error loading authentication data:', error);
       } finally {
@@ -58,23 +70,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
     
     loadStoredAuth();
-  }, []);
-
   
+  }, []);
 
   const logout = async () => {
     try {
-      // Check if there's a current user before signing out
-      const currentUser = auth().currentUser;
-      if (currentUser) {
-        await auth().signOut();
-      }
-      
-      // Always clear local state and storage
       setUser(null);
       setToken(null);
+      setUserType(null);
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('userType');
       
       console.log('User logged out successfully');
     } catch (error) {
@@ -82,118 +88,62 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Still clear local state and storage even if Firebase logout fails
       setUser(null);
       setToken(null);
+      setUserType(null);
       await AsyncStorage.removeItem('userToken');
       await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('userType');
     }
   };
 
-  const updateUserProfile = async (userData: any) => {
-    try {
-      // const BACKEND_URL = 'http://10.0.2.2:5000';  // for Android emulator
-      const BACKEND_URL = `${API_URL}`;  // for Android emulator
-      const response = await axios.put(
-        `${BACKEND_URL}/api/users/profile`,
-        userData,
-        {
-          headers: { Authorization: `Bearer ${token}` }
-        }
+  const registerUser = async (userData: any) => {
+      const response = await axios.post(
+        `${API_URL}/user/register`,
+        userData
       );
-      setUser(response.data);
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      throw error;
+      return response.data;
+  };
+
+  const loginUser = async ({email, password }: any) => {
+    try {
+      const response = await fetch(`${API_URL}/user/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+  
+      const data = await response.json();
+      if(response.ok){
+
+        setToken(data?.token);
+    setUser(data?.user);
+    setUserType(data?.user?.userType);
+      await AsyncStorage.setItem('userToken', data.token);
+    await AsyncStorage.setItem('userData', JSON.stringify(data?.user));
+    await AsyncStorage.setItem('userType', data.user?.userType);
+      }
+      if (!response.ok) {
+        throw new Error(data.message || 'Login failed');
+      }
+  
+      // Save token and navigate
+      console.log('Login success:', data);
+  
+    } catch (error: any) {
+      Alert.alert('Failed!', error?.message)
+      console.error('Login error:', error?.message);
+      // Show toast or error message
     }
   };
 
-  const signInWithPhoneNumber = async (phoneNumber: string, otp?: string) => {
-    try {
-      if (!otp) {
-        // First check if the user exists in our database
-        try {
-          console.log("Checking if user exists with phone:", phoneNumber);
-          
-          // Make sure the API URL is correct
-          console.log("API URL:", `${API_URL}/api/user/check-user`);
-          
-          const checkResponse = await axios.post(`${API_URL}/api/user/check-user`, { phoneNumber: phoneNumber.slice(3) });
-          console.log("Check user response:", checkResponse.data);
-          
-          if (!checkResponse.data.exists) {
-            console.log("User not found in database");
-            throw new Error('Account not found. Please contact the administrator.');
-          }
-          
-          console.log("User exists, proceeding with OTP");
-          // User exists, proceed with OTP
-          const confirmationResult = await auth().signInWithPhoneNumber(phoneNumber);
-          setConfirmation(confirmationResult);
-          return { success: true };
-        } catch (error: any) {
-          console.error('Error checking user:', error);
-          
-          // Check if it's a network error
-          if (error.message === 'Network Error') {
-            throw new Error('Network error. Please check your internet connection.');
-          }
-          
-          // Check if it's a server error
-          if (error.response && error.response.status >= 500) {
-            throw new Error('Server error. Please try again later.');
-          }
-          
-          // Otherwise, propagate the error
-          throw error;
-        }
-      } else {
-        if (!confirmation) {
-          throw new Error('No confirmation object found');
-        }
-        
-        // Verify OTP
-        console.log("Verifying OTP");
-        const result = await confirmation.confirm(otp);
-        console.log("Firebase auth result:", result);
-        
-        if (result?.user) {
-          try {
-            // Login the user with our backend using existing login endpoint
-            console.log("Logging in with phone:", result.user.phoneNumber);
-            const loginResponse = await axios.post(
-              `${API_URL}/api/user/login`, 
-              { phoneNumber: result.user.phoneNumber?.slice(3) }
-            );
-            
-            console.log("Backend login response:", loginResponse.data);
-            
-            // Save the user data and JWT token from your backend
-            setUser(loginResponse.data);
-            setToken(loginResponse.data.token);
-            
-            // Store token in AsyncStorage - check for null/undefined values
-            if (loginResponse.data.token) {
-              await AsyncStorage.setItem('userToken', loginResponse.data.token);
-            }
-            
-            // Only store user data if it exists
-            if (loginResponse.data) {
-              await AsyncStorage.setItem('userData', JSON.stringify(loginResponse.data));
-            }
-            
-            console.log("JWT token saved to AsyncStorage");
-            
-            return { success: true };
-          } catch (backendError) {
-            console.error('Backend login error:', backendError);
-            throw new Error('Login failed. Please try again.');
-          }
-        }
-        return { success: false };
-      }
-    } catch (error) {
-      console.error('Auth Error:', error);
-      throw error;
-    }
-  };
+  const sendOtpToEmail = async (email: any) => {
+    console.log("EMAIL", email)
+  return await axios.post(`${API_URL}/user/send-otp`, { email });
+};
+
+const verifyEmailOtp = async (email: any, otp: any) => {
+  return await axios.post(`${API_URL}/user/verify-otp`, {email, code: otp });
+};
+
 
   return (
     <AuthContext.Provider
@@ -201,10 +151,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         token,
         loading,
-        signInWithPhoneNumber,
+        userType,
+        setUserType,
+        registerUser,
+        sendOtpToEmail,
+        verifyEmailOtp,
+        loginUser,
         logout,
-        updateUserProfile,
-      }}
+
+      } as any}
     >
       {children}
     </AuthContext.Provider>

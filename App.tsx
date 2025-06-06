@@ -1,20 +1,23 @@
+import 'react-native-gesture-handler';
 import React from 'react';
 import { AuthProvider } from './src/context/AuthContext';
-import  Navigation  from './src/navigation/index';
 import { NavigationContainer } from '@react-navigation/native';
 import RootNavigator from './src/navigation/index';
 import { StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { Provider as AntProvider } from '@ant-design/react-native';
 const App = () => {
-  return (
-    <SafeAreaProvider>
 
+  return (
+    <AntProvider>
+    <SafeAreaProvider>
     <AuthProvider>
       <NavigationContainer>
-        <RootNavigator />r
+        <RootNavigator />
       </NavigationContainer>
     </AuthProvider>
     </SafeAreaProvider>
+    </AntProvider>
   );
 };
 

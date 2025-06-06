@@ -1,43 +1,97 @@
 import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from '../screens/HomeScreen';
-import PhoneNumberScreen from '../screens/auth/PhoneNumberScreen';
-import OTPScreen from '../screens/auth/OTPScreen';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import LoginScreen from '../screens/auth/LoginScreen';
+import AuthLandingScreen from '../screens/auth/AuthLandingScreen';
+import UserTypeScreen from '../screens/auth/UserTypeScreen';
+import RegistrationScreen from '../screens/auth/RegistrationScreen';
+import VendorPendingApprovalScreen from '../screens/auth/VendorPendingApprovalScreen';
+import SpotDetailsScreen from '../screens/SpotDetailsScreen';
+import AddSpotScreen from '../screens/AddSpotScreen';
+import { createDrawerNavigator } from '@react-navigation/drawer';
+import PendingRequestsScreen from '../screens/PendingRequestsScreen';
+import UserDetailsScreen from '../screens/auth/UserDetailsScreen';
+import ManageUsersScreen from '../screens/ManageUsersScreen';
 // import SpotDetailsScreen from '../screens/SpotDetailsScreen';
 // import AddSpotScreen from '../screens/AddSpotScreen';
 // ... other imports
 
 const Stack = createStackNavigator();
 const AuthStack = createStackNavigator();
-const MainStack = createStackNavigator();
+const Drawer = createDrawerNavigator();
+
 
 // Auth navigator
 const AuthNavigator = () => (
-  <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-    <AuthStack.Screen name="PhoneNumber" component={PhoneNumberScreen} />
-    <AuthStack.Screen name="OTP" component={OTPScreen} />
+  <AuthStack.Navigator>
+    <AuthStack.Screen name="AuthLanding" component={AuthLandingScreen} options={{ headerShown: false }} />
+    <AuthStack.Screen name="UserType" component={UserTypeScreen} options={{ title: 'Select Account Type' }}/>
+    <AuthStack.Screen name="Registration" component={RegistrationScreen} options={{ title: 'Register' }} />
+    <AuthStack.Screen name="Login" component={LoginScreen} options={{ title: 'Login' }} />
+    <AuthStack.Screen name="VendorPendingApproval" component={VendorPendingApprovalScreen} />
   </AuthStack.Navigator>
 );
 
 // Main app navigator
-const MainNavigator = () => (
-  <MainStack.Navigator screenOptions={{ headerShown: false }}>
-    <MainStack.Screen name="Home" component={HomeScreen} />
-    {/* <MainStack.Screen name="SpotDetails" component={SpotDetailsScreen} /> */}
-    {/* <MainStack.Screen name="AddSpot" component={AddSpotScreen} /> */}
-    {/* Add other screens here */}
-  </MainStack.Navigator>
-);
+const MainNavigator = () => {
+  const { user } = useAuth();
+return (
 
-// Loading component
+    <Drawer.Navigator initialRouteName="Home" 
+    screenOptions={{
+    headerShown: false,
+    drawerStyle: {
+      backgroundColor: '#ffffff', // Drawer background
+      width: 250,
+    },
+    drawerLabelStyle: {
+      fontSize: 16,
+      fontWeight: 'bold',
+      color: '#333', // Inactive label color
+    },
+    drawerActiveTintColor: '#4CAF50', // Active label/text/icon color
+    drawerInactiveTintColor: '#888',   // Inactive label/text/icon color
+    drawerItemStyle: {
+      marginVertical: 5,
+      borderRadius: 8,
+    },
+  }}>
+    <Drawer.Screen name="Home" component={HomeScreen} />
+{user?.userType === 'admin' && (
+
+    <Drawer.Screen name="Requests" component={PendingRequestsScreen} />
+)}
+    <Drawer.Screen
+      name="SpotDetails"
+      component={SpotDetailsScreen}
+      options={{ drawerItemStyle: { display: 'none' } }}
+    />
+    <Drawer.Screen
+      name="AddSpot"
+      component={AddSpotScreen}
+      options={{ drawerItemStyle: { display: 'none' } }}
+    />
+    <Drawer.Screen
+      name="EditSpot"
+      component={AddSpotScreen}
+      options={{ drawerItemStyle: { display: 'none' } }}
+    />
+    <Drawer.Screen name="ProfileSettings" component={UserDetailsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
+{user?.userType === 'admin' && (
+        <Drawer.Screen name="ManageUsers" component={ManageUsersScreen} options={{ title: 'Manage Users' }} />
+      )}
+    </Drawer.Navigator>
+)
+}
+
+
 const LoadingScreen = () => (
   <View style={styles.loadingContainer}>
     <ActivityIndicator size="large" color="#4CAF50" />
   </View>
 );
 
-// Root navigator that switches between Auth and Main based on authentication state
 const RootNavigator = () => {
   const { loading, token } = useAuth();
   
@@ -48,7 +102,7 @@ const RootNavigator = () => {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {token ? (
-        <Stack.Screen name="Main" component={MainNavigator} />
+        <Stack.Screen name="Drawer" component={MainNavigator} />
       ) : (
         <Stack.Screen name="Auth" component={AuthNavigator} />
       )}

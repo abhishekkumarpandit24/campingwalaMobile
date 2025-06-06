@@ -1,14 +1,12 @@
-// campingwalaMobile/src/screens/HomeScreen.tsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  Image, 
+import React, { useState, useCallback, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  Image,
   RefreshControl,
-  ActivityIndicator,
   Alert,
   StatusBar
 } from 'react-native';
@@ -19,10 +17,9 @@ import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/config';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import SkeletonPlaceholder from 'react-native-skeleton-placeholder';
-import { IconButton } from 'react-native-paper';
 import AppIcon from '../components/AppIcon';
+import TopBar from '../components/Topbar';
 
-// Define the camping spot type based on your backend model
 interface CampingSpot {
   _id: string;
   name: string;
@@ -37,184 +34,92 @@ interface CampingSpot {
   isChildFriendly: boolean;
 }
 
-// Define your navigation param list
 type RootStackParamList = {
   Home: undefined;
   SpotDetails: { spot: CampingSpot };
   AddSpot: undefined;
   EditSpot: { spot: CampingSpot };
-  // Add other screens as needed
 };
 
-// Create a typed navigation hook
-type HomeScreenNavigationProp = StackNavigationProp<RootStackParamList>;
+type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const HomeScreen = () => {
   const [campingSpots, setCampingSpots] = useState<CampingSpot[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const { user, token, logout } = useAuth();
-  const navigation = useNavigation<HomeScreenNavigationProp>();
-console.log(user, "userFromHomeScreen")
-  // Function to fetch camping spots
+  const navigation = useNavigation<NavigationProp>();
+  const [searchText, setSearchText] = useState('');
+const [filteredSpots, setFilteredSpots] = useState(campingSpots);
+
+useEffect(() => {
+  const filtered = campingSpots.filter(spot =>
+    spot.name.toLowerCase().includes(searchText.toLowerCase())
+  );
+  setFilteredSpots(filtered);
+}, [searchText, campingSpots]);
+
+const handleSearch = () => {
+  // Optional: log or do something extra
+};
+
   const fetchCampingSpots = useCallback(async () => {
+    if (!token) {
+      Alert.alert("Authentication Required", "Please login to view camping spots.", [{ text: "OK", onPress: logout }]);
+      return;
+    }
+
+    const endpoint = user?.userType === 'vendor'
+      ? `${API_URL}/my-spots`
+      : `${API_URL}/camping-spots`;
+
     try {
       setLoading(true);
-      
-      // Check if token exists
-      if (!token) {
-        console.log("No token found, redirecting to login");
-        Alert.alert(
-          "Authentication Required",
-          "Please login to view camping spots.",
-          [{ text: "OK", onPress: () => logout() }]
-        );
-        return;
-      }
-      
-      console.log("Using token for API call:", token);
-      
-      // Make sure the endpoint is correctly formatted
-      const endpoint = token 
-        ? `${API_URL}/api/my-spots` 
-        : `${API_URL}/api/camping-spots`;
-      
-      console.log("Calling endpoint:", endpoint);
-      
-      const config = {
-        headers: { Authorization: `Bearer ${token}` },
-        timeout: 5000 // 5 second timeout
-      };
-      
-      try {
-        const response = await axios.get(endpoint, config);
-        console.log("API response:", response.data);
-        setCampingSpots(response.data);
-      } catch (error: any) {
-        console.error('Error fetching camping spots:', error);
-        
-        // Check for authentication errors (401 Unauthorized)
-        if (axios.isAxiosError(error) && error.response?.status === 401) {
-          console.log("Token invalid or expired, redirecting to login");
-          Alert.alert(
-            "Session Expired",
-            "Your session has expired. Please login again.",
-            [{ text: "OK", onPress: () => logout() }]
-          );
-          return;
-        }
-        
-        // Show error alert
+      const { data } = await axios.get(endpoint, { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 });
+      setCampingSpots(data);
+    } catch (error: any) {
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        Alert.alert("Session Expired", "Please login again.", [{ text: "OK", onPress: logout }]);
+      } else {
         Alert.alert('Error', 'Failed to load camping spots. Please check your connection.');
       }
-    } catch (error) {
-      console.error('Unexpected error:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [user, token, logout]);
+  }, [token, user?.userType, logout]);
 
-  // Refresh the list when the screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      console.log("Screen focused, fetching camping spots with token:", token);
-      fetchCampingSpots();
-    }, [fetchCampingSpots])
-  );
+  useFocusEffect(useCallback(() => { fetchCampingSpots(); }, [fetchCampingSpots]));
+  const onRefresh = () => { setRefreshing(true); fetchCampingSpots(); };
 
-  // Pull to refresh functionality
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchCampingSpots();
-  }, [fetchCampingSpots]);
-
-  // Handle spot deletion (for vendors)
   const handleDeleteSpot = async (spotId: string) => {
-    // Check if token exists
-    if (!token) {
-      Alert.alert(
-        "Session Expired",
-        "Your session has expired. Please login again.",
-        [{ text: "OK", onPress: () => logout() }]
-      );
-      return;
-    }
-    
-    Alert.alert(
-      'Confirm Deletion',
-      'Are you sure you want to delete this camping spot? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const endpoint = `${API_URL}/api/my-spots/${spotId}`;
-              await axios.delete(endpoint, {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              // Remove the deleted spot from the list
-              setCampingSpots(prevSpots => 
-                prevSpots.filter(spot => spot._id !== spotId)
-              );
-              Alert.alert('Success', 'Camping spot deleted successfully');
-            } catch (error) {
-              console.error('Error deleting camping spot:', error);
-              
-              // Check for authentication errors
-              if (axios.isAxiosError(error) && error.response?.status === 401) {
-                Alert.alert(
-                  "Session Expired",
-                  "Your session has expired. Please login again.",
-                  [{ text: "OK", onPress: () => logout() }]
-                );
-                return;
-              }
-              
-              Alert.alert('Error', 'Failed to delete camping spot');
-            }
+    if (!token) return logout();
+    Alert.alert('Confirm Deletion', 'Are you sure?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: async () => {
+          try {
+            await axios.delete(`${API_URL}/my-spots/${spotId}`, { headers: { Authorization: `Bearer ${token}` } });
+            setCampingSpots(spots => spots.filter(s => s._id !== spotId));
+          } catch (error) {
+            if (axios.isAxiosError(error) && error.response?.status === 401) logout();
+            Alert.alert('Error', 'Failed to delete.');
           }
         }
-      ]
-    );
+      }
+    ]);
   };
 
-  // Navigate to spot details
-  const navigateToSpotDetails = (spot: CampingSpot) => {
-    navigation.navigate('SpotDetails', { spot });
-  };
-
-  // Navigate to edit spot (for vendors)
-  const navigateToEditSpot = (spot: CampingSpot) => {
-    navigation.navigate('EditSpot', { spot });
-  };
-
-  // Navigate to add new spot (for vendors)
-  const navigateToAddSpot = () => {
-    navigation.navigate('AddSpot');
-  };
-
-  // Render each camping spot card
   const renderCampingSpot = ({ item }: { item: CampingSpot }) => (
-    <TouchableOpacity 
-      style={styles.card} 
-      onPress={() => navigateToSpotDetails(item)}
-    >
-      <Image 
-        source={{ uri: item.thumbnailImage || 'https://via.placeholder.com/150' }} 
-        style={styles.thumbnail}
-      />
+    <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('SpotDetails', { spot: item })}>
+      <Image source={{ uri: item.thumbnailImage || 'https://via.placeholder.com/150' }} style={styles.thumbnail} />
       <View style={styles.cardContent}>
         <Text style={styles.title}>{item.name}</Text>
         <Text style={styles.location}>{item.location}</Text>
         <Text style={styles.price}>₹{item.price}/night</Text>
-        
         <View style={styles.tagsContainer}>
-          <View style={styles.categoryTag}>
-            <Text style={styles.categoryText}>{item.category}</Text>
-          </View>
+          <View style={styles.categoryTag}><Text style={styles.categoryText}>{item.category}</Text></View>
           {item.isPetFriendly && (
             <View style={styles.featureTag}>
               <AppIcon name="pets" size={14} color="#555" />
@@ -223,19 +128,12 @@ console.log(user, "userFromHomeScreen")
           )}
         </View>
       </View>
-      
       {user?.role === 'vendor' && (
         <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={styles.editButton}
-            onPress={() => navigateToEditSpot(item)}
-          >
+          <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditSpot', { spot: item })}>
             <Icon name="edit" size={20} color="#fff" />
           </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.deleteButton}
-            onPress={() => handleDeleteSpot(item._id)}
-          >
+          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteSpot(item._id)}>
             <Icon name="delete" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
@@ -243,7 +141,6 @@ console.log(user, "userFromHomeScreen")
     </TouchableOpacity>
   );
 
-  // Render skeleton loader
   const renderSkeletonLoader = () => (
     <View style={styles.listContainer}>
       {[1, 2, 3].map((_, index) => (
@@ -255,8 +152,8 @@ console.log(user, "userFromHomeScreen")
               <View style={{ width: '40%', height: 15, marginBottom: 10 }} />
               <View style={{ width: '30%', height: 15, marginBottom: 15 }} />
               <View style={{ flexDirection: 'row' }}>
-                <View style={{ width: 60, height: 25, borderRadius: 4, marginRight: 10 }} />
-                <View style={{ width: 100, height: 25, borderRadius: 4 }} />
+                <View style={{ width: 60, height: 25, marginRight: 10 }} />
+                <View style={{ width: 100, height: 25 }} />
               </View>
             </View>
           </View>
@@ -265,7 +162,6 @@ console.log(user, "userFromHomeScreen")
     </View>
   );
 
-  // Render empty state
   const renderEmptyList = () => (
     <View style={styles.emptyContainer}>
       {!loading && (
@@ -273,10 +169,7 @@ console.log(user, "userFromHomeScreen")
           <Icon name="nature-people" size={60} color="#ccc" />
           <Text style={styles.emptyText}>No camping spots found</Text>
           {user?.role === 'vendor' && (
-            <TouchableOpacity 
-              style={styles.addButton}
-              onPress={navigateToAddSpot}
-            >
+            <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('AddSpot')}>
               <Text style={styles.addButtonText}>Add Your First Spot</Text>
             </TouchableOpacity>
           )}
@@ -286,50 +179,45 @@ console.log(user, "userFromHomeScreen")
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>
-          {user?.role === 'vendor' ? 'My Camping Spots' : 'Discover Camping Spots'}
-        </Text>
-        {token && (
-          <TouchableOpacity 
-            style={styles.addSpotButton}
-            onPress={() => logout()}
-          >
+  <View style={styles.container}>
+    <TopBar
+      searchText={searchText}
+      setSearchText={setSearchText}
+      onSearch={handleSearch}
+      user={user}
+    />
 
-            <Icon name="logout" size={24} color="#fff" />
-          </TouchableOpacity>
-        )}
-        {user?.role === 'vendor' && (
-          <TouchableOpacity 
-            style={styles.addSpotButton}
-            onPress={navigateToAddSpot}
-          >
-            <Icon name="add" size={24} color="#fff" />
-          </TouchableOpacity>
-        )}
-      </View>
+    <View style={styles.header}>
+      <Text style={styles.headerTitle}>
+        {user?.userType === 'vendor' ? 'My Camping Spots' : 'Discover Camping Spots'}
+      </Text>
 
-      {loading && !refreshing ? (
-        renderSkeletonLoader()
-      ) : (
-        <FlatList
-          data={campingSpots}
-          renderItem={renderCampingSpot}
-          keyExtractor={item => item._id}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={renderEmptyList}
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              colors={['#4CAF50']}
-            />
-          }
-        />
+      {user?.userType === 'vendor' && (
+        <TouchableOpacity style={styles.addSpotButton} onPress={() => navigation.navigate('AddSpot')}>
+          <Icon name="add" size={24} color="#fff" />
+        </TouchableOpacity>
       )}
     </View>
-  );
+
+    {loading && !refreshing ? renderSkeletonLoader() : (
+      <FlatList
+        data={filteredSpots}
+        renderItem={renderCampingSpot}
+        keyExtractor={item => item._id}
+        contentContainerStyle={styles.listContainer}
+        ListEmptyComponent={renderEmptyList}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#4CAF50']}
+          />
+        }
+      />
+    )}
+  </View>
+);
+
 };
 
 const styles = StyleSheet.create({
@@ -347,6 +235,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#4CAF50',
   },
   headerTitle: {
+    margin: 'auto',
     fontSize: 20,
     fontWeight: 'bold',
     color: '#fff',
@@ -487,6 +376,25 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
   },
+  // // container: {
+  // //   flex: 1,
+  // //   backgroundColor: '#f5f5f9',
+  // // },
+  // cardContainer: {
+  //   paddingHorizontal: 8,
+  // },
+  // image: {
+  //   width: 250,
+  //   height: 160,
+  //   borderRadius: 8,
+  // },
+  // thumb: {
+  //   marginRight: 16,
+  // },
+  // description: {
+  //   fontSize: 14,
+  //   color: '#666',
+  // },
 });
 
 export default HomeScreen;

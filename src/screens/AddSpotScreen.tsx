@@ -11,13 +11,14 @@ import {
   Alert,
   ActivityIndicator,
   Image,
+  StatusBar,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { API_URL } from '../config/config';
-import * as ImagePicker from 'expo-image-picker';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { launchImageLibrary } from 'react-native-image-picker';
 
 const AddSpotScreen = () => {
   const navigation = useNavigation();
@@ -30,38 +31,46 @@ const AddSpotScreen = () => {
   const [location, setLocation] = useState('');
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Standard');
+  const [category, setCategory] = useState('');
   const [isPetFriendly, setIsPetFriendly] = useState(false);
   const [isChildFriendly, setIsChildFriendly] = useState(false);
   const [thumbnailImage, setThumbnailImage] = useState('');
-  const [imageUrls, setImageUrls] = useState<string[]>([]);
+  const [imageUrls, setImageUrls] = useState<any>([]);
+
+  const [maxGuests, setMaxGuests] = useState('');
+  const [amenities, setAmenities] = useState('');
+  const [cancellationPolicy, setCancellationPolicy] = useState('');
+  const [checkInTime, setCheckInTime] = useState('');
+  const [checkOutTime, setCheckOutTime] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
 
   // Image picker function
   const pickImage = async (isMainImage = false) => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'You need to grant camera roll permissions to upload images.');
-        return;
-      }
-      
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [16, 9],
-        quality: 0.8,
-      });
-      
-      if (!result.canceled) {
-        const selectedImage = result.assets[0];
-        await uploadImage(selectedImage.uri, isMainImage);
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image');
+  try {
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      includeBase64: false,
+      quality: 0.8,
+      maxWidth: 1280,
+      maxHeight: 720,
+    });
+
+    if (result.didCancel) return;
+
+    const selectedAsset = result.assets?.[0];
+
+    if (selectedAsset?.uri) {
+      await uploadImage(selectedAsset.uri, isMainImage);
+    } else {
+      Alert.alert('Error', 'No image selected');
     }
-  };
+  } catch (error) {
+    console.error('Error picking image:', error);
+    Alert.alert('Error', 'Failed to pick image');
+  }
+};
+
 
   // Upload image to server
   const uploadImage = async (uri: string, isMainImage: boolean) => {
@@ -77,7 +86,7 @@ const AddSpotScreen = () => {
       } as any);
       
       // Upload to server
-      const response = await axios.post(`${API_URL}/api/image/upload`, formData, {
+      const response = await axios.post(`${API_URL}/image/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
           'Authorization': `Bearer ${token}`,
@@ -86,10 +95,11 @@ const AddSpotScreen = () => {
       
       if (response.data && response.data.imageUrl) {
         if (isMainImage) {
-          setThumbnailImage(response.data.imageUrl);
-        } else {
-          setImageUrls(prev => [...prev, response.data.imageUrl]);
-        }
+        setThumbnailImage(response.data.imageUrl);
+      } else {
+        setImageUrls((prev: any[]) => [...prev, response.data.imageUrl]);
+      }
+    
       }
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -101,7 +111,7 @@ const AddSpotScreen = () => {
 
   // Submit form
   const handleSubmit = async () => {
-    if (!name || !location || !price || !description || !thumbnailImage) {
+    if (!name || !location || !price || !description) {
       Alert.alert('Missing Fields', 'Please fill in all required fields and upload a main image');
       return;
     }
@@ -121,14 +131,15 @@ const AddSpotScreen = () => {
         imageUrls,
       };
       
-      await axios.post(`${API_URL}/api/my-spots`, spotData, {
+      await axios.post(`${API_URL}/vendor/spot-requests`, spotData, {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
       });
       
-      Alert.alert('Success', 'Camping spot created successfully');
+      Alert.alert('Success', "Camping site request submitted for approval"
+);
       navigation.goBack();
     } catch (error) {
       console.error('Error creating camping spot:', error);
@@ -139,14 +150,7 @@ const AddSpotScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Icon name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Add New Camping Spot</Text>
-      </View>
-
+    <ScrollView>
       <View style={styles.form}>
         <Text style={styles.label}>Name *</Text>
         <TextInput
@@ -170,6 +174,15 @@ const AddSpotScreen = () => {
           value={price}
           onChangeText={setPrice}
           placeholder="Enter price"
+          keyboardType="numeric"
+        />
+
+        <Text style={styles.label}>Max Guests</Text>
+        <TextInput
+          style={styles.input}
+          value={maxGuests}
+          onChangeText={setMaxGuests}
+          placeholder="Enter maximum guests allowed"
           keyboardType="numeric"
         />
 
@@ -203,6 +216,56 @@ const AddSpotScreen = () => {
             </TouchableOpacity>
           ))}
         </View>
+
+        <Text style={styles.label}>Amenities</Text>
+        <TextInput
+          style={styles.input}
+          value={amenities}
+          onChangeText={setAmenities}
+          placeholder="Comma-separated list (e.g. WiFi, Parking)"
+        />
+
+        <Text style={styles.label}>Check-In Time</Text>
+        <TextInput
+          style={styles.input}
+          value={checkInTime}
+          onChangeText={setCheckInTime}
+          placeholder="e.g. 2:00 PM"
+        />
+
+        <Text style={styles.label}>Check-Out Time</Text>
+        <TextInput
+          style={styles.input}
+          value={checkOutTime}
+          onChangeText={setCheckOutTime}
+          placeholder="e.g. 11:00 AM"
+        />
+
+        <Text style={styles.label}>Phone</Text>
+        <TextInput
+          style={styles.input}
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="Enter contact number"
+          keyboardType="phone-pad"
+        />
+
+        <Text style={styles.label}>Email</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Enter email address"
+          keyboardType="email-address"
+        />
+
+        <Text style={styles.label}>Cancellation Policy</Text>
+        <TextInput
+          style={styles.input}
+          value={cancellationPolicy}
+          onChangeText={setCancellationPolicy}
+          placeholder="Describe your cancellation policy"
+        />
 
         <View style={styles.switchRow}>
           <Text style={styles.label}>Pet Friendly</Text>
@@ -242,18 +305,18 @@ const AddSpotScreen = () => {
 
         <Text style={styles.label}>Additional Images</Text>
         <View style={styles.imagesContainer}>
-          {imageUrls.map((url, index) => (
+          {imageUrls.map((url: any, index: any) => (
             <View key={index} style={styles.imagePreviewContainer}>
               <Image source={{ uri: url }} style={styles.imagePreview} />
               <TouchableOpacity 
                 style={styles.removeImageButton}
-                onPress={() => setImageUrls(prev => prev.filter((_, i) => i !== index))}
+                onPress={() => setImageUrls((prev: any) => prev.filter((_: any, i: any) => i !== index))}
               >
                 <Icon name="close" size={16} color="#fff" />
               </TouchableOpacity>
             </View>
           ))}
-          
+
           <TouchableOpacity 
             style={styles.addImageButton}
             onPress={() => pickImage(false)}
@@ -283,6 +346,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    marginTop: StatusBar.currentHeight,
+    
   },
   header: {
     flexDirection: 'row',
