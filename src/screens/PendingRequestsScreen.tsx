@@ -12,11 +12,12 @@ import {
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API_URL } from '../config/config';
-import { useAuth } from '../context/AuthContext';
 import { Button } from 'react-native-paper'; // Or use your preferred button
 import { useNavigation } from '@react-navigation/native';
 import { RootStackParamList } from '../types/navigation';
 import { StackNavigationProp } from '@react-navigation/stack';
+import { useAuthStore } from '../store/auth';
+import { approveUser, fetchPendingCampingRequests, fetchPendingUserRequests, rejectUser } from '../services/user.api';
 type NavigationProp = StackNavigationProp<RootStackParamList>;
 const PendingRequestsScreen = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -25,33 +26,28 @@ const PendingRequestsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<any>({});
   const [modalVisible, setModalVisible] = useState(false);
-  const { token } = useAuth();
+  const { token } = useAuthStore();
 
-  const fetchRequests = async () => {
-    try {
-      const [userResult, campingResult] = await Promise.allSettled([
-        axios.get(`${API_URL}/user/pending-users`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        axios.get(`${API_URL}/admin/spot-requests`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-      ]);
+ const fetchRequests = async () => {
+  try {
+    const [userResult, campingResult] = await Promise.allSettled([
+      fetchPendingUserRequests(),
+      fetchPendingCampingRequests(),
+    ]);
 
-      if (userResult.status === 'fulfilled') {
-        setUserRequests(userResult.value.data);
-      }
-
-      if (campingResult.status === 'fulfilled') {
-        setCampingRequests(campingResult.value.data);
-      }
-    } catch (err) {
-      console.error('Unexpected error:', err);
-    } finally {
-      setLoading(false);
+    if (userResult.status === 'fulfilled') {
+      setUserRequests(userResult.value);
     }
-  };
 
+    if (campingResult.status === 'fulfilled') {
+      setCampingRequests(campingResult.value);
+    }
+  } catch (err) {
+    console.error('Unexpected error:', err);
+  } finally {
+    setLoading(false);
+  }
+};
   useEffect(() => {
     fetchRequests();
   }, []);
@@ -61,32 +57,27 @@ const PendingRequestsScreen = () => {
     setModalVisible(true);
   };
 
-  const handleApprove = async () => {
-    if (!selectedUser) return;
-    try {
-      await axios.post(`${API_URL}/user/approve/${selectedUser._id}`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUserRequests(prev => prev.filter((u: any) => u._id !== selectedUser._id));
-      setModalVisible(false);
-    } catch (error) {
-      console.error("Approval failed", error);
-    }
-  };
+ const handleApprove = async () => {
+  if (!selectedUser) return;
+  try {
+    await approveUser(selectedUser._id);
+    setUserRequests(prev => prev.filter((u: any) => u._id !== selectedUser._id));
+    setModalVisible(false);
+  } catch (error) {
+    console.error("Approval failed", error);
+  }
+};
 
-  const handleDecline = async () => {
-    if (!selectedUser) return;
-    try {
-      await axios.post(`${API_URL}/user/reject/${selectedUser._id}`, {}, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUserRequests(prev => prev.filter((u: any)=> u?._id !== selectedUser?._id));
-      setModalVisible(false);
-    } catch (error) {
-      console.error("Decline failed", error);
-    }
-  };
-console.log("campingPending", campingRequests)
+const handleDecline = async () => {
+  if (!selectedUser) return;
+  try {
+    await rejectUser(selectedUser._id);
+    setUserRequests(prev => prev.filter((u: any) => u._id !== selectedUser._id));
+    setModalVisible(false);
+  } catch (error) {
+    console.error("Decline failed", error);
+  }
+};
   if (loading) {
     return (
       <View style={styles.center}>
@@ -94,12 +85,12 @@ console.log("campingPending", campingRequests)
       </View>
     );
   }
-
+  
   const handleReviewSpotRequest = (item: any) => {
-  navigation.navigate<any>('SpotDetails', { spot: item?.spotDetails, requestId: item._id,
-    requestStatus: item.status, setCampingRequests: setCampingRequests });
-};
-
+    navigation.navigate<any>('SpotDetails', { spot: item?.spotDetails, requestId: item._id,
+      requestStatus: item.status, setCampingRequests: setCampingRequests });
+    };
+    
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>User Pending Requests</Text>

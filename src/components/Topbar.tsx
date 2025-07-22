@@ -4,11 +4,11 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import { DrawerNavigationProp } from '@react-navigation/drawer';
 import { useNavigation } from '@react-navigation/native';
 import { DrawerParamList } from '../types/navigation';
-import { useAuth } from '../context/AuthContext';
+import { useAuthStore } from '../store/auth';
 
 const TopBar = ({ searchText, setSearchText, onSearch, user }: any) => {
   const navigation = useNavigation<DrawerNavigationProp<DrawerParamList>>();
-  const { logout } = useAuth();
+  const { logout } = useAuthStore();
 
   const [menuVisible, setMenuVisible] = useState(false);
 

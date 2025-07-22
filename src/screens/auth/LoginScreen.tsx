@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
-import axios from 'axios';
-import { API_URL } from '../../config/config';
+import { useAuthStore } from '../../store/auth';
 
 const LoginSchema = Yup.object().shape({
   email: Yup.string().email('Invalid email').required('Email is required'),
@@ -18,7 +16,7 @@ const ForgotPasswordSchema = Yup.object().shape({
 });
 
 const LoginScreen = () => {
-  const { loginUser } = useAuth();
+  const { loginUser, sendResetCode, verifyAndResetPassword } = useAuthStore();
   const [isForgotMode, setIsForgotMode] = useState(false);
   const [step, setStep] = useState<'email' | 'verify' | 'reset'>('email');
   const [emailForReset, setEmailForReset] = useState('');
@@ -26,38 +24,23 @@ const LoginScreen = () => {
 
   const handleSendCode = async (email: string) => {
     setIsLoading(true);
-    try {
-      await axios.post(`${API_URL}/user/auth/forgot-password/send-code`, { email });
+    const res = await sendResetCode(email);
+    setIsLoading(false);
+
+    if (res.success) {
       setEmailForReset(email);
       setStep('verify');
-    } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to send code');
-    } finally {
-      setIsLoading(false);
     }
   };
 
-
   const handleVerifyAndReset = async (values: { email: string; code: string; newPassword: string }) => {
     setIsLoading(true);
-    try {
-      await axios.post(`${API_URL}/user/auth/forgot-password/verify-code`, {
-        email: values.email,
-        code: values.code,
-      });
+    const res = await verifyAndResetPassword(values);
+    setIsLoading(false);
 
-      await axios.post(`${API_URL}/user/auth/forgot-password/reset`, {
-        email: values.email,
-        newPassword: values.newPassword,
-      });
-
-      Alert.alert('Success', 'Password reset successful');
+    if (res.success) {
       setIsForgotMode(false);
       setStep('email');
-    } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to reset password');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -73,7 +56,7 @@ const LoginScreen = () => {
             onSubmit={async (values) => {
               setIsLoading(true);
               try {
-                await loginUser(values);
+                await loginUser({ email: values.email, password: values.password });
               } catch (error) {
                 Alert.alert('Login failed', 'Invalid credentials or server error');
               } finally {

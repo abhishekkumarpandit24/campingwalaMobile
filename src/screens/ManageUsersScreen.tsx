@@ -1,11 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, Alert } from 'react-native';
-import { useAuth } from '../context/AuthContext';
-import axios from 'axios';
-import { API_URL } from '../config/config';
+import { useAuthStore } from '../store/auth';
+import { deleteUserById, fetchAllUsers } from '../services/user.api';
 
 const ManageUsersScreen = () => {
-  const { token } = useAuth();
+  const { token } = useAuthStore();
   const [users, setUsers] = useState([]);
 
   useEffect(() => {
@@ -13,30 +12,24 @@ const ManageUsersScreen = () => {
   }, []);
 
   const fetchUsers = async () => {
-    try {
-      const response = await axios.get(`${API_URL}/user/all-users`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setUsers(response.data);
-    } catch (err: any) {
-      Alert.alert('Error', err.response?.data?.message || 'Failed to fetch users');
-    }
-  };
+  try {
+    const users: any = await fetchAllUsers();
+    setUsers(users);
+  } catch (err: any) {
+    Alert.alert('Error', err.response?.data?.message || 'Failed to fetch users');
+  }
+};
 
-  const handleDelete = async (id: string) => {
-    try {
-      const response = await axios.delete(`${API_URL}/user/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (response) {
-        Alert.alert('Success', 'User deleted successfully');
-        fetchUsers();
-      }
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'An error occurred');
-    }
-  };
+const handleDelete = async (id: string) => {
+  try {
+    await deleteUserById(id);
+    Alert.alert('Success', 'User deleted successfully');
+    fetchUsers();
+  } catch (err) {
+    console.error(err);
+    Alert.alert('Error', 'An error occurred');
+  }
+};
 
   const renderItem = ({ item }: any) => (
     <View style={styles.userCard}>

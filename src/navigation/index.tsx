@@ -1,20 +1,23 @@
 import { createStackNavigator } from '@react-navigation/stack';
 import HomeScreen from '../screens/HomeScreen';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
-import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/auth/LoginScreen';
 import AuthLandingScreen from '../screens/auth/AuthLandingScreen';
 import UserTypeScreen from '../screens/auth/UserTypeScreen';
 import RegistrationScreen from '../screens/auth/RegistrationScreen';
 import VendorPendingApprovalScreen from '../screens/auth/VendorPendingApprovalScreen';
 import SpotDetailsScreen from '../screens/SpotDetailsScreen';
-import AddSpotScreen from '../screens/AddSpotScreen';
+import AddEditSpotScreen from '../screens/AddEditSpotScreen';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import PendingRequestsScreen from '../screens/PendingRequestsScreen';
 import UserDetailsScreen from '../screens/auth/UserDetailsScreen';
 import ManageUsersScreen from '../screens/ManageUsersScreen';
+import ManageSpotsScreen from '../screens/ManageSpotsScreen';
+import { useAuthStore } from '../store/auth';
+import BookingScreen from '../screens/Booking/BookingScreen';
+import PaymentConfirmationScreen from '../screens/Payment/PaymentConfirmation';
+import MyBookingsScreen from '../screens/MyBookings/MyBookings';
 // import SpotDetailsScreen from '../screens/SpotDetailsScreen';
-// import AddSpotScreen from '../screens/AddSpotScreen';
 // ... other imports
 
 const Stack = createStackNavigator();
@@ -35,7 +38,7 @@ const AuthNavigator = () => (
 
 // Main app navigator
 const MainNavigator = () => {
-  const { user } = useAuth();
+  const { user } = useAuthStore();
 return (
 
     <Drawer.Navigator initialRouteName="Home" 
@@ -67,19 +70,37 @@ return (
       component={SpotDetailsScreen}
       options={{ drawerItemStyle: { display: 'none' } }}
     />
+     <Drawer.Screen
+      name="BookingScreen"
+      component={BookingScreen}
+      options={{ drawerItemStyle: { display: 'none' } }}
+    />
+    <Drawer.Screen
+      name="PaymentConfirmation"
+      component={PaymentConfirmationScreen}
+      options={{ drawerItemStyle: { display: 'none' } }}
+    />
+    <Drawer.Screen
+      name="MyBookings"
+      component={MyBookingsScreen}
+      options={{ drawerItemStyle: { display: 'none' } }}
+    />
     <Drawer.Screen
       name="AddSpot"
-      component={AddSpotScreen}
+      component={AddEditSpotScreen}
       options={{ drawerItemStyle: { display: 'none' } }}
     />
     <Drawer.Screen
       name="EditSpot"
-      component={AddSpotScreen}
+      component={AddEditSpotScreen}
       options={{ drawerItemStyle: { display: 'none' } }}
     />
     <Drawer.Screen name="ProfileSettings" component={UserDetailsScreen} options={{ drawerItemStyle: { display: 'none' } }} />
 {user?.userType === 'admin' && (
+  <>
         <Drawer.Screen name="ManageUsers" component={ManageUsersScreen} options={{ title: 'Manage Users' }} />
+        <Drawer.Screen name="ManageSpots" component={ManageSpotsScreen} options={{ title: 'Manage Spots' }} />
+  </>
       )}
     </Drawer.Navigator>
 )
@@ -93,8 +114,7 @@ const LoadingScreen = () => (
 );
 
 const RootNavigator = () => {
-  const { loading, token } = useAuth();
-  
+  const { loading, token } = useAuthStore();
   if (loading) {
     return <LoadingScreen />;
   }

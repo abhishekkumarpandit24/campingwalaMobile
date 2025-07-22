@@ -13,12 +13,12 @@ import {
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import axios from 'axios';
-import { useAuth } from '../context/AuthContext';
-import { API_URL } from '../config/config';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import SkeletonPlaceholder from 'react-native-skeleton-placeholder';
 import AppIcon from '../components/AppIcon';
 import TopBar from '../components/Topbar';
+import { useAuthStore } from '../store/auth';
+import { fetchAllCampingSpots, fetchVendorCampingData } from '../services/camping.api';
 
 interface CampingSpot {
   _id: string;
@@ -32,6 +32,7 @@ interface CampingSpot {
   amenities: string[];
   isPetFriendly: boolean;
   isChildFriendly: boolean;
+  status?: string
 }
 
 type RootStackParamList = {
@@ -45,75 +46,67 @@ type NavigationProp = StackNavigationProp<RootStackParamList>;
 
 const HomeScreen = () => {
   const [campingSpots, setCampingSpots] = useState<CampingSpot[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const { user, token, logout } = useAuth();
+  const { user, token, logout, loadStoredAuth } = useAuthStore();
+  console.log('user: ', user);
   const navigation = useNavigation<NavigationProp>();
   const [searchText, setSearchText] = useState('');
-const [filteredSpots, setFilteredSpots] = useState(campingSpots);
+  const [filteredSpots, setFilteredSpots] = useState(campingSpots);
 
-useEffect(() => {
-  const filtered = campingSpots.filter(spot =>
-    spot.name.toLowerCase().includes(searchText.toLowerCase())
-  );
-  setFilteredSpots(filtered);
-}, [searchText, campingSpots]);
+  useEffect(() => {
+    const filtered = campingSpots.filter(spot =>
+      spot.name.toLowerCase().includes(searchText.toLowerCase())
+    );
+    setFilteredSpots(filtered);
+  }, [searchText, campingSpots]);
 
-const handleSearch = () => {
-  // Optional: log or do something extra
-};
 
-  const fetchCampingSpots = useCallback(async () => {
-    if (!token) {
-      Alert.alert("Authentication Required", "Please login to view camping spots.", [{ text: "OK", onPress: logout }]);
-      return;
+const fetchCampingSpots = useCallback(async () => {
+  if (!token) {
+    Alert.alert('Authentication Required', 'Please login to view camping spots.', [
+      { text: 'OK', onPress: logout },
+    ]);
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const spots = user?.userType === 'vendor'
+      ? await fetchVendorCampingData()
+      : await fetchAllCampingSpots();
+
+    setCampingSpots(spots);
+  } catch (err: any) {
+    if (axios.isAxiosError(err) && err.response?.status === 401) {
+      Alert.alert('Session Expired', 'Please login again.', [{ text: 'OK', onPress: logout }]);
+    } else {
+      Alert.alert('Error', 'Failed to fetch spots. Check your connection.');
     }
+  } finally {
+    setLoading(false);
+    setRefreshing(false);
+  }
+}, [token, user?.userType, logout]);
 
-    const endpoint = user?.userType === 'vendor'
-      ? `${API_URL}/my-spots`
-      : `${API_URL}/camping-spots`;
 
-    try {
-      setLoading(true);
-      const { data } = await axios.get(endpoint, { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 });
-      setCampingSpots(data);
-    } catch (error: any) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        Alert.alert("Session Expired", "Please login again.", [{ text: "OK", onPress: logout }]);
-      } else {
-        Alert.alert('Error', 'Failed to load camping spots. Please check your connection.');
-      }
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [token, user?.userType, logout]);
 
   useFocusEffect(useCallback(() => { fetchCampingSpots(); }, [fetchCampingSpots]));
   const onRefresh = () => { setRefreshing(true); fetchCampingSpots(); };
 
-  const handleDeleteSpot = async (spotId: string) => {
-    if (!token) return logout();
-    Alert.alert('Confirm Deletion', 'Are you sure?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete', style: 'destructive',
-        onPress: async () => {
-          try {
-            await axios.delete(`${API_URL}/my-spots/${spotId}`, { headers: { Authorization: `Bearer ${token}` } });
-            setCampingSpots(spots => spots.filter(s => s._id !== spotId));
-          } catch (error) {
-            if (axios.isAxiosError(error) && error.response?.status === 401) logout();
-            Alert.alert('Error', 'Failed to delete.');
-          }
-        }
-      }
-    ]);
-  };
-
   const renderCampingSpot = ({ item }: { item: CampingSpot }) => (
     <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('SpotDetails', { spot: item })}>
+
+      {/* 🟡 Ribbon Badge for Pending */}
+      {item.status === 'pending' && (
+        <View style={styles.ribbon}>
+          <Text style={styles.ribbonText}>Pending</Text>
+        </View>
+      )}
+
       <Image source={{ uri: item.thumbnailImage || 'https://via.placeholder.com/150' }} style={styles.thumbnail} />
+
       <View style={styles.cardContent}>
         <Text style={styles.title}>{item.name}</Text>
         <Text style={styles.location}>{item.location}</Text>
@@ -128,18 +121,9 @@ const handleSearch = () => {
           )}
         </View>
       </View>
-      {user?.role === 'vendor' && (
-        <View style={styles.actionButtons}>
-          <TouchableOpacity style={styles.editButton} onPress={() => navigation.navigate('EditSpot', { spot: item })}>
-            <Icon name="edit" size={20} color="#fff" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteSpot(item._id)}>
-            <Icon name="delete" size={20} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      )}
     </TouchableOpacity>
   );
+
 
   const renderSkeletonLoader = () => (
     <View style={styles.listContainer}>
@@ -179,44 +163,43 @@ const handleSearch = () => {
   );
 
   return (
-  <View style={styles.container}>
-    <TopBar
-      searchText={searchText}
-      setSearchText={setSearchText}
-      onSearch={handleSearch}
-      user={user}
-    />
+    <View style={styles.container}>
+      <TopBar
+        searchText={searchText}
+        setSearchText={setSearchText}
+        user={user}
+      />
 
-    <View style={styles.header}>
-      <Text style={styles.headerTitle}>
-        {user?.userType === 'vendor' ? 'My Camping Spots' : 'Discover Camping Spots'}
-      </Text>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>
+          {user?.userType === 'vendor' ? 'My Camping Spots' : 'Discover Camping Spots'}
+        </Text>
 
-      {user?.userType === 'vendor' && (
-        <TouchableOpacity style={styles.addSpotButton} onPress={() => navigation.navigate('AddSpot')}>
-          <Icon name="add" size={24} color="#fff" />
-        </TouchableOpacity>
+        {user?.userType === 'vendor' && (
+          <TouchableOpacity style={styles.addSpotButton} onPress={() => navigation.navigate('AddSpot')}>
+            <Icon name="add" size={24} color="#fff" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {loading && !refreshing ? renderSkeletonLoader() : (
+        <FlatList
+          data={filteredSpots}
+          renderItem={renderCampingSpot}
+          keyExtractor={item => item._id}
+          contentContainerStyle={styles.listContainer}
+          ListEmptyComponent={renderEmptyList}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4CAF50']}
+            />
+          }
+        />
       )}
     </View>
-
-    {loading && !refreshing ? renderSkeletonLoader() : (
-      <FlatList
-        data={filteredSpots}
-        renderItem={renderCampingSpot}
-        keyExtractor={item => item._id}
-        contentContainerStyle={styles.listContainer}
-        ListEmptyComponent={renderEmptyList}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            colors={['#4CAF50']}
-          />
-        }
-      />
-    )}
-  </View>
-);
+  );
 
 };
 
@@ -395,6 +378,24 @@ const styles = StyleSheet.create({
   //   fontSize: 14,
   //   color: '#666',
   // },
+  ribbon: {
+    position: 'absolute',
+    top: 10,
+    left: -30,
+    backgroundColor: '#FFAA00',
+    paddingVertical: 2,
+    paddingHorizontal: 40,
+    transform: [{ rotate: '-45deg' }],
+    zIndex: 1,
+  },
+
+  ribbonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+
 });
 
 export default HomeScreen;

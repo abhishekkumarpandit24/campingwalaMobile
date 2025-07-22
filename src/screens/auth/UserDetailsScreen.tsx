@@ -1,24 +1,22 @@
-import axios from 'axios';
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from 'react-native';
-import { API_URL } from '../../config/config';
-import { useAuth } from '../../context/AuthContext';
+import React, { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { useAuthStore } from '../../store/auth';
 
 const UserDetailsScreen = ({ route, navigation }: any) => {
-  const { user } = route.params; // Expecting complete user object passed via route
-  const [firstName, setFirstName] = useState(user?.firstName || '');
-  const [lastName, setLastName] = useState(user?.lastName || '');
-  const [email, setEmail] = useState(user?.email || '');
-  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || '');
-  const [businessName, setBusinessName] = useState(user?.businessName || '');
-  const [businessAddress, setBusinessAddress] = useState(user?.businessAddress || '');
-  const [businessContact, setBusinessContact] = useState(user?.businessContact || '');
+  const { user } = route.params;
+  const [firstName, setFirstName] = useState(user?.firstName ?? '');
+  const [lastName, setLastName] = useState(user?.lastName ?? '');
+  const [email, setEmail] = useState(user?.email ?? '');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber ?? '');
+  const [businessName, setBusinessName] = useState(user?.businessName ?? '');
+  const [businessAddress, setBusinessAddress] = useState(user?.businessAddress ?? '');
+  const [businessContact, setBusinessContact] = useState(user?.businessContact ?? '');
   const [loading, setLoading] = useState(false);
-  const { token } = useAuth();
-console.log("user", user)
-  
-const handleUpdateProfile = async (updatedUser: {
+  const { updateProfile } = useAuthStore();
+
+  const handleUpdateProfile = async (updatedUser: {
   firstName: string;
+  phoneNumber: string;
   lastName: string;
   email?: string;
   businessName?: string;
@@ -26,21 +24,13 @@ const handleUpdateProfile = async (updatedUser: {
   businessContact?: string;
 }) => {
   setLoading(true);
-  try {
-    await axios.put(`${API_URL}/user/profile`, updatedUser, {
-      headers: {
-        Authorization: `Bearer ${token}`, 
-      },
-    });
-    Alert.alert('Success', 'Profile updated successfully');
-    navigation.goBack(); 
-  } catch (err: any) {
-    Alert.alert('Error', err.response?.data?.message || 'Failed to update profile');
-  } finally {
-    setLoading(false);
+  const res = await updateProfile(updatedUser);
+  setLoading(false);
+
+  if (res.success) {
+    navigation.goBack();
   }
 };
-
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Update Your Profile</Text>
@@ -49,7 +39,8 @@ const handleUpdateProfile = async (updatedUser: {
         style={[styles.input]}
         placeholder="Phone Number"
         value={phoneNumber}
-        editable={false}
+        onChangeText={setPhoneNumber}
+      // editable={false}
       />
       <TextInput
         style={styles.input}
@@ -71,41 +62,42 @@ const handleUpdateProfile = async (updatedUser: {
       />
       {user?.userType === "vendor" && (
         <>
-        <TextInput
-        style={styles.input}
-        placeholder="Business Name"
-        value={businessName}
-        onChangeText={setBusinessName}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Business Address"
-        value={businessAddress}
-        onChangeText={setBusinessAddress}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Business Contact"
-        value={businessContact}
-        onChangeText={setBusinessContact}
-      />
+          <TextInput
+            style={styles.input}
+            placeholder="Business Name"
+            value={businessName}
+            onChangeText={setBusinessName}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Business Address"
+            value={businessAddress}
+            onChangeText={setBusinessAddress}
+          />
+          <TextInput
+            style={styles.input}
+            placeholder="Business Contact"
+            value={businessContact}
+            onChangeText={setBusinessContact}
+          />
         </>
-        )}
+      )}
 
       <TouchableOpacity
-  style={styles.button}
-  onPress={() =>
-    handleUpdateProfile({
-      firstName,
-      lastName,
-      email,
-      businessName,
-      businessAddress,
-      businessContact,
-    })
-  }
-  disabled={loading}
->
+        style={styles.button}
+        onPress={() =>
+          handleUpdateProfile({
+            firstName,
+            lastName,
+            email,
+            phoneNumber,
+            businessName,
+            businessAddress,
+            businessContact,
+          })
+        }
+        disabled={loading}
+      >
         {loading ? <ActivityIndicator color="white" /> : <Text style={styles.buttonText}>Save Changes</Text>}
       </TouchableOpacity>
     </View>

@@ -11,91 +11,25 @@ import {
   SafeAreaView,
   StatusBar,
   Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
-import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { StackNavigationProp } from '@react-navigation/stack';
-import { useAuth } from '../context/AuthContext';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import axios from 'axios';
 import { API_URL } from '../config/config';
+import { SpotDetailsNavigationProp, SpotDetailsRouteProp } from '../types/spotDetail';
+import { useAuthStore } from '../store/auth';
+import { approveCampingRequest, deleteCampingSpot, rejectCampingRequest } from '../services/camping.api';
 
 const { width, height } = Dimensions.get('window');
-
-// Define the camping spot type with all available fields
-interface CampingSpot {
-  _id: string;
-  name: string;
-  location: string;
-  price: number;
-  description: string;
-  thumbnailImage: string;
-  imageUrls: string[];
-  category: string;
-  isPetFriendly: boolean;
-  isChildFriendly: boolean;
-  hasElectricity: boolean;
-  hasRunningWater: boolean;
-  firewoodProvided: boolean;
-  parkingAvailable: boolean;
-  allowCampfires: boolean;
-  allowBBQ: boolean;
-  wheelchairAccessible: boolean;
-  distanceFromCity: string;
-  checkInTime: string;
-  checkOutTime: string;
-  emergencyContact: string;
-  instagramHandle?: string;
-  facebookPage?: string;
-  petPolicy?: string;
-  alcoholPolicy?: string;
-  groupDiscount?: string;
-  nearbyAttractions?: string[];
-  rules?: string[];
-  securityMeasures?: string[];
-  accommodationType: string;
-  numberOfUnits?: string;
-  maxGuests?: string;
-  minimumNights?: string;
-  bedTypes?: string[];
-  facilities?: string[];
-  mealOptions?: {
-    breakfast?: {
-      available: boolean;
-      isComplimentary: boolean;
-      price?: number;
-      timings?: string;
-    };
-    lunch?: {
-      available: boolean;
-      isComplimentary: boolean;
-      price?: number;
-      timings?: string;
-    };
-    dinner?: {
-      available: boolean;
-      isComplimentary: boolean;
-      price?: number;
-      timings?: string;
-    };
-  };
-}
-
-// Define route param types
-type RootStackParamList = {
-  SpotDetails: { spot: CampingSpot, requestId?: string, requestStatus?: string, setCampingRequests?: any };
-  BookingScreen: { spot: CampingSpot };
-  EditSpot: { spot: CampingSpot };
-  // Add other screens as needed
-};
-
-type SpotDetailsRouteProp = RouteProp<RootStackParamList, 'SpotDetails'>;
-type SpotDetailsNavigationProp = StackNavigationProp<RootStackParamList>;
 
 const SpotDetailsScreen = () => {
   const navigation = useNavigation<SpotDetailsNavigationProp>();
   const route = useRoute<SpotDetailsRouteProp>();
-  const { user, token } = useAuth();
-  const { spot, requestId, requestStatus, setCampingRequests  } = route.params;
+  const { user, token, userType } = useAuthStore();
+  const { spot, requestId, requestStatus, setCampingRequests } = route.params;
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showFullScreen, setShowFullScreen] = useState(false);
@@ -131,34 +65,39 @@ const SpotDetailsScreen = () => {
 
   // Handle spot deletion (for vendors)
   const handleDeleteSpot = async () => {
-    Alert.alert(
-      'Confirm Deletion',
-      'Are you sure you want to delete this camping spot? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { 
-          text: 'Delete', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setLoading(true);
-              const endpoint = `${API_URL}/api/my-spots/${spot._id}`;
-              await axios.delete(endpoint, {
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              Alert.alert('Success', 'Camping spot deleted successfully');
-              navigation.goBack();
-            } catch (error) {
-              console.error('Error deleting camping spot:', error);
-              Alert.alert('Error', 'Failed to delete camping spot');
-            } finally {
-              setLoading(false);
-            }
+  Alert.alert(
+    'Confirm Deletion',
+    'Are you sure you want to delete this camping spot? This action cannot be undone.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setLoading(true);
+            await deleteCampingSpot(spot);
+
+            Alert.alert(
+              'Success',
+              spot?.status === 'approved'
+                ? 'Delete request submitted for admin approval'
+                : 'Camping spot deleted successfully'
+            );
+
+            navigation.goBack();
+          } catch (error) {
+            console.error('Error deleting camping spot:', error);
+            Alert.alert('Error', 'Failed to delete camping spot');
+          } finally {
+            setLoading(false);
           }
-        }
-      ]
-    );
-  };
+        },
+      },
+    ]
+  );
+};
+
 
   // Navigate to edit spot (for vendors)
   const handleEditSpot = () => {
@@ -168,37 +107,62 @@ const SpotDetailsScreen = () => {
   const handleApprove = async () => {
   try {
     setLoading(true);
-    await axios.put(`${API_URL}/admin/spot-requests/${requestId}`, { status: 'approved'}, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-      setCampingRequests((prev: any) => prev.filter((u: any) => u._id !== requestId));
+    await approveCampingRequest(requestId);
+    setCampingRequests((prev: any) => prev.filter((u: any) => u._id !== requestId));
 
     Alert.alert('Success', 'Request approved successfully');
-    navigation.goBack(); // or navigate somewhere else
+    navigation.goBack();
   } catch (error) {
+    console.error('Approval error:', error);
     Alert.alert('Error', 'Failed to approve request');
   } finally {
     setLoading(false);
   }
 };
 
-const handleDecline = async () => {
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+
+  const handleDecline = async () => {
+  if (!rejectionReason.trim()) {
+    Alert.alert('Reason Required', 'Please provide a reason for rejection.');
+    return;
+  }
+
   try {
     setLoading(true);
-    await axios.put(`${API_URL}/admin/spot-requests/${requestId}`, { status: 'rejected'}, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-      setCampingRequests((prev: any) => prev.filter((u: any) => u._id !== requestId));
+    if(requestId){
+      await rejectCampingRequest(requestId, rejectionReason);
+    }
 
+    setCampingRequests((prev: any) => prev.filter((u: any) => u._id !== requestId));
+    setShowRejectionModal(false);
     Alert.alert('Success', 'Request declined successfully');
-    navigation.goBack(); // or navigate somewhere else
+    navigation.goBack();
   } catch (error) {
+    console.error('Rejection error:', error);
     Alert.alert('Error', 'Failed to decline request');
   } finally {
     setLoading(false);
+    setRejectionReason('');
   }
 };
 
+
+  // const displayedKeys = new Set([
+  //   'name', 'location', 'price', 'description', 'category', 'discount',
+  //   'distanceFromCity', 'bestSeasonToVisit', 'bedTypes', 'cancellationPolicy',
+  //   'accommodationType', 'numberOfUnits', 'maxGuests', 'minimumNights',
+  //   'checkInTime', 'checkOutTime', 'hasElectricity', 'hasRunningWater',
+  //   'parkingAvailable', 'firewoodProvided', 'facilities', 'mealOptions',
+  //   'rules', 'nearbyAttractions', 'petPolicy', 'alcoholPolicy',
+  //   'groupDiscount', 'emergencyContact', 'instagramHandle', 'facebookPage',
+  //   'imageUrls', 'thumbnailImage', 'videoUrls', 'status', 'isChildFriendly', 'isPetFriendly',
+  //   'allowCampfires', 'allowBBQ', 'createdAt', '_id', '__v', 'updatedAt', 'latitude', 'longitude',
+  //   'seasonalPricing', 'wheelchairAccessible', 'originalSpotId', 'pricingOptions', 'availability', 'ownerId',
+  //   'extraCharges', 'securityMeasures', 'tags', 'activitiesAvailable', 'acceptedPaymentMethods', 'amenities',
+  //   'refundPolicy', 'numberOfTentsAllowed', 'specialOffers', 'averageTemperature', 'averageRating', 'reviews'
+  // ]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -234,18 +198,94 @@ const handleDecline = async () => {
           <Text style={styles.title}>{spot.name}</Text>
           <Text style={styles.location}>{spot.location}</Text>
           <Text style={styles.price}>₹{spot.price} per night</Text>
-          
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle]}>{spot.category}</Text>
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Average Rating</Text>
+            <View style={styles.ratingRow}>
+              {/* Stars */}
+              {Array.from({ length: 5 }).map((_, index) => (
+                <Icon
+                  key={`${index + 1}`}
+                  name={index < Math.floor(spot?.averageRating ?? 0) ? 'star' : 'star-border'}
+                  size={24}
+                  color="#f4c430" // gold/yellow
+                />
+              ))}
+              {/* Rating Value */}
+              <Text style={styles.ratingValue}>{spot?.averageRating?.toFixed(1) ?? '0.0'}</Text>
+            </View>
+
+            {/* <View style={styles.section}>
+              <Text style={styles.sectionTitle}>User Reviews</Text>
+
+              {spot?.reviews?.length > 0 ? (
+                spot?.reviews.slice(0, 3).map((review: any, index: any) => (
+                  <View key={index} style={styles.reviewCard}>
+                    <View style={styles.reviewHeader}>
+                      
+                      <View style={styles.avatarCircle}>
+                        <Text style={styles.avatarInitial}>
+                          {review?.user?.name?.charAt(0)?.toUpperCase() ?? 'U'}
+                        </Text>
+                      </View>
+
+                      
+                      <View style={{ flex: 1, marginLeft: 12 }}>
+                        <Text style={styles.reviewerName}>{review?.user?.name ?? 'Anonymous'}</Text>
+                        <View style={styles.ratingRow}>
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Icon
+                              key={i}
+                              name={i < Math.floor(review.rating) ? 'star' : 'star-border'}
+                              size={18}
+                              color="#f4c430"
+                            />
+                          ))}
+                          <Text style={styles.reviewDate}>{formatDate(review?.date)}</Text>
+                        </View>
+                      </View>
+                    </View>
+
+                   
+                    <Text style={styles.reviewText}>{review?.text}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noReview}>No reviews available</Text>
+              )}
+            </View> */}
+
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Latitude</Text>
+            <Text style={styles.description}>{spot.latitude}</Text>
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Longitude</Text>
+            <Text style={styles.description}>{spot.longitude}</Text>
+          </View>
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Discount</Text>
+            <Text style={styles.description}>{spot.discount}</Text>
+          </View>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Description</Text>
             <Text style={styles.description}>{spot.description}</Text>
           </View>
-
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Average Temperature</Text>
+            <Text style={styles.description}>{spot.averageTemperature}</Text>
+          </View>
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Accommodation Details</Text>
             <Text style={styles.detail}>Type: {spot.accommodationType}</Text>
             {spot.numberOfUnits && <Text style={styles.detail}>Units Available: {spot.numberOfUnits}</Text>}
             {spot.maxGuests && <Text style={styles.detail}>Max Guests: {spot.maxGuests}</Text>}
             {spot.minimumNights && <Text style={styles.detail}>Minimum Nights: {spot.minimumNights}</Text>}
+            {spot.numberOfTentsAllowed && <Text style={styles.detail}>Maximum number of {spot.accommodationType} allowed: {spot.numberOfTentsAllowed}</Text>}
+
           </View>
 
           <View style={styles.section}>
@@ -253,6 +293,12 @@ const handleDecline = async () => {
             <Text style={styles.detail}>Check-in: {spot.checkInTime}</Text>
             <Text style={styles.detail}>Check-out: {spot.checkOutTime}</Text>
           </View>
+
+          {spot?.pricingOptions?.length > 0 && <Text style={styles.sectionTitle}>Pricing Options</Text>}
+          {spot?.pricingOptions?.map((item: any) => (<View style={styles.section}>
+            <Text style={styles.detail}>{item?.occupancyType}: ₹{item?.pricePerPerson}/- price per person</Text>
+
+          </View>))}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Amenities</Text>
@@ -281,15 +327,71 @@ const handleDecline = async () => {
                   <Text style={styles.amenityText}>Firewood</Text>
                 </View>
               )}
+              {spot?.isPetFriendly && (
+                <View style={styles.amenityItem}>
+                  <Icon name="pets" size={24} color="#666" />
+                  <Text style={styles.amenityText}>Pet Allowed</Text>
+                </View>
+              )}
+
+              {spot?.isChildFriendly && (
+                <View style={styles.amenityItem}>
+                  <Icon name="child-friendly" size={24} color="#666" />
+                  <Text style={styles.amenityText}>Child Friendly</Text>
+                </View>
+              )}
+
+              {spot?.allowCampfires && (
+                <View style={styles.amenityItem}>
+                  <Icon name="whatshot" size={24} color="#666" />
+                  <Text style={styles.amenityText}>Campfires</Text>
+                </View>
+              )}
+
+              {spot?.allowBBQ && (
+                <View style={styles.amenityItem}>
+                  <Icon name="outdoor-grill" size={24} color="#666" />
+                  <Text style={styles.amenityText}>Barbecue</Text>
+                </View>
+              )}
+              {spot?.wheelchairAccessible && (
+                <View style={styles.amenityItem}>
+                  <Icon name="accessible" size={24} color="#666" />
+                  <Text style={styles.amenityText}>Wheel Chair</Text>
+                </View>
+              )}
             </View>
           </View>
+
+          <Text style={styles.sectionTitle}>Seasonal Pricing</Text>
+          {spot?.seasonalPricing?.map((item: any) => (<View style={styles.section}>
+            <Text style={styles.detail}>{item?.season}: ₹{item?.pricing}</Text>
+          </View>))}
+
+          {spot?.availability?.length > 0 && (<>
+            <Text style={styles.sectionTitle}>Available Dates</Text>
+            {spot?.availability?.map((item: any, index: number) => {
+              const formattedDate = new Intl.DateTimeFormat('en-IN', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+              }).format(new Date(item?.date));
+
+              return (
+                <View key={index} style={styles.section}>
+                  <Text style={styles.detail}>{formattedDate}</Text>
+                </View>
+              );
+            })}
+          </>)}
+
 
           {spot.facilities && spot.facilities.length > 0 && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Facilities</Text>
               <View style={styles.tagContainer}>
                 {spot.facilities.map((facility, index) => (
-                  <View key={index} style={styles.tag}>
+                  <View key={`${index + 1}`} style={styles.tag}>
                     <Text style={styles.tagText}>{facility}</Text>
                   </View>
                 ))}
@@ -297,25 +399,47 @@ const handleDecline = async () => {
             </View>
           )}
 
-          {spot.mealOptions && (
+          {spot.bedTypes && spot.bedTypes.length > 0 && (
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Meal Options</Text>
-              {spot.mealOptions.breakfast?.available && (
-                <View style={styles.mealOption}>
-                  <Text style={styles.mealType}>Breakfast</Text>
-                  <Text style={styles.mealDetail}>
-                    {spot.mealOptions.breakfast.isComplimentary 
-                      ? 'Complimentary' 
-                      : `₹${spot.mealOptions.breakfast.price}`}
-                  </Text>
-                  {spot.mealOptions.breakfast.timings && (
-                    <Text style={styles.mealTiming}>{spot.mealOptions.breakfast.timings}</Text>
-                  )}
-                </View>
-              )}
-              {/* Similar blocks for lunch and dinner */}
+              <Text style={styles.sectionTitle}>Available Bed Types</Text>
+              <View style={styles.tagContainer}>
+                {spot.bedTypes.map((facility, index) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{facility}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
           )}
+
+          {(['breakfast', 'lunch', 'dinner'] as const).map((meal) => {
+            const option: any = spot?.mealOptions?.[meal]; // TS infers this as one of the valid keys
+
+            if (!option?.available) return null;
+
+            return (
+              <View key={meal} style={styles.mealOption}>
+                <Text style={styles.mealType}>{meal.charAt(0).toUpperCase() + meal.slice(1)}</Text>
+                <Text style={styles.mealDetail}>
+                  {option.isComplimentary ? 'Complimentary' : `₹${option.price}`}
+                </Text>
+                {option.timings && (
+                  <Text style={styles.mealTiming}>
+                    {typeof option.timings === 'string'
+                      ? option.timings
+                      : `${option.timings?.start} - ${option?.timings?.end}`}
+                  </Text>
+                )}
+                {option.description?.split()?.map((facility: any, index: any) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{facility}</Text>
+                  </View>
+                ))}
+              </View>
+            );
+          })}
+
+
 
           {spot.rules && spot.rules.length > 0 && (
             <View style={styles.section}>
@@ -340,7 +464,90 @@ const handleDecline = async () => {
             {spot.petPolicy && <Text style={styles.detail}>Pet Policy: {spot.petPolicy}</Text>}
             {spot.alcoholPolicy && <Text style={styles.detail}>Alcohol Policy: {spot.alcoholPolicy}</Text>}
             {spot.groupDiscount && <Text style={styles.detail}>Group Discount: {spot.groupDiscount}</Text>}
+            {spot.cancellationPolicy && <Text style={styles.detail}>Cancellation Policy: {spot.cancellationPolicy}</Text>}
+            {spot.extraCharges && <Text style={styles.detail}>Extra charges: {spot.extraCharges}</Text>}
+            {spot.refundPolicy && <Text style={styles.detail}>Refund policy: {spot.refundPolicy}</Text>}
+
+
           </View>
+
+          {spot.activitiesAvailable && spot.activitiesAvailable.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Activities Available</Text>
+              <View style={styles.tagContainer}>
+                {spot.activitiesAvailable.map((method, index) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{method}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {spot.tags && spot.tags.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Tags</Text>
+              <View style={styles.tagContainer}>
+                {spot.tags.map((tag, index) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{tag}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {spot.bestSeasonToVisit && spot.bestSeasonToVisit.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Best season to visit</Text>
+              <View style={styles.tagContainer}>
+                {spot.bestSeasonToVisit.map((facility, index) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{facility}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {spot.amenities && spot.amenities.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Amenities</Text>
+              <View style={styles.tagContainer}>
+                {spot.amenities?.map((facility: any, index: any) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{facility}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {spot.securityMeasures && spot.securityMeasures.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Security Measures</Text>
+              <View style={styles.tagContainer}>
+                {spot.securityMeasures.map((facility, index) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{facility}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {spot.acceptedPaymentMethods && spot.acceptedPaymentMethods.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Accepted Payment Methods</Text>
+              <View style={styles.tagContainer}>
+                {spot.acceptedPaymentMethods.map((method, index) => (
+                  <View key={`${index + 1}`} style={styles.tag}>
+                    <Text style={styles.tagText}>{method}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Contact</Text>
@@ -352,35 +559,132 @@ const handleDecline = async () => {
               <Text style={styles.detail}>Facebook: {spot.facebookPage}</Text>
             )}
           </View>
+
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Distance from city</Text>
+            <Text style={styles.description}>{spot.distanceFromCity}</Text>
+          </View>
+
+          {spot?.specialOffers && <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Special offers</Text>
+            <Text style={styles.description}>{spot.specialOffers}</Text>
+          </View>}
+
+
         </View>
+        {/* <View style={[styles.section, { backgroundColor: '#f9f9f9', borderRadius: 12, padding: 12 }]}>
+          
+          {Object.entries(spot)
+            .filter(([key]) => !displayedKeys.has(key))
+            .map(([key, value]) => (
+              <View
+                key={key}
+                style={{
+                  backgroundColor: '#fff',
+                  borderRadius: 8,
+                  padding: 10,
+                  marginBottom: 10,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 3,
+                  elevation: 2,
+                }}
+              >
+                <Text style={{ fontWeight: '600', color: '#333', marginBottom: 4 }}>
+                  {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                </Text>
+
+                {Array.isArray(value) ? (
+                  value.length === 0 ? (
+                    <Text style={{ color: '#888' }}>Not available</Text>
+                  ) : (
+                    value.map((item, idx) => (
+                      <Text key={idx} style={{ color: '#444', paddingLeft: 6 }}>• {String(item)}</Text>
+                    ))
+                  )
+                ) : typeof value === 'object' && value !== null ? (
+                  Object.entries(value).map(([subKey, subVal], idx) => (
+                    <Text key={idx} style={{ color: '#444', paddingLeft: 6 }}>
+                      {subKey}: {typeof subVal === 'object' ? JSON.stringify(subVal) : String(subVal)}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={{ color: '#444' }}>{String(value)}</Text>
+                )}
+              </View>
+            ))}
+        </View> */}
 
         {/* Booking Button */}
-        {/* <TouchableOpacity style={styles.bookButton} onPress={handleBookNow}>
-          <Text style={styles.bookButtonText}>Book Now</Text>
-        </TouchableOpacity> */}
+        {userType === "customer" && (
+  <TouchableOpacity style={styles.bookButton} onPress={handleBookNow}>
+    <Text style={styles.bookButtonText}>Book Now</Text>
+  </TouchableOpacity>
+)}
 
         {/* Vendor Actions */}
-        {user?.userType === 'vendor' && (
-          <View style={styles.vendorActions}>
-            <TouchableOpacity style={styles.editButton} onPress={handleEditSpot}>
-              <Text style={styles.editButtonText}>Edit Spot</Text>
+        {user?.userType === 'vendor'
+          // && spot?.status === "pending"
+          && (
+            <View style={styles.vendorActions}>
+              <TouchableOpacity style={styles.editButton} onPress={handleEditSpot}>
+                <Text style={styles.editButtonText}>Edit Spot</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteSpot}>
+                <Text style={styles.deleteButtonText}>Delete Spot</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+        {user?.userType === "admin" && requestId && (
+          <View style={styles.actionButtonsContainer}>
+            <TouchableOpacity style={styles.approveButton} onPress={() => handleApprove()}>
+              <Text style={styles.actionButtonText}>Approve</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.deleteButton} onPress={handleDeleteSpot}>
-              <Text style={styles.deleteButtonText}>Delete Spot</Text>
+            {/* <TouchableOpacity style={styles.declineButton} onPress={() => handleDecline()}>
+              <Text style={styles.actionButtonText}>Decline</Text>
+            </TouchableOpacity> */}
+            <TouchableOpacity style={styles.declineButton} onPress={() => setShowRejectionModal(true)}>
+              <Text style={styles.actionButtonText}>Decline</Text>
             </TouchableOpacity>
+
           </View>
         )}
 
-        {user?.userType === "admin" && requestId && (
-  <View style={styles.actionButtonsContainer}>
-    <TouchableOpacity style={styles.approveButton} onPress={() => handleApprove()}>
-      <Text style={styles.actionButtonText}>Approve</Text>
-    </TouchableOpacity>
-    <TouchableOpacity style={styles.declineButton} onPress={() => handleDecline()}>
-      <Text style={styles.actionButtonText}>Decline</Text>
-    </TouchableOpacity>
-  </View>
-)}
+        <Modal
+          visible={showRejectionModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowRejectionModal(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            style={styles.modalOverlay}
+          >
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Rejection Reason</Text>
+              <TextInput
+                value={rejectionReason}
+                onChangeText={setRejectionReason}
+                placeholder="Enter reason for rejection"
+                multiline
+                numberOfLines={4}
+                style={styles.modalInput}
+                placeholderTextColor="#888"
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity onPress={() => setShowRejectionModal(false)} style={styles.cancelButton}>
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleDecline} style={styles.submitButton}>
+                  <Text style={styles.submitText}>Submit</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
+
       </ScrollView>
 
       {/* Full Screen Image Modal */}
@@ -623,6 +927,122 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  ratingValue: {
+    marginLeft: 8,
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  reviewCard: {
+    backgroundColor: '#f9f9f9',
+    padding: 12,
+    marginBottom: 10,
+    borderRadius: 8,
+    elevation: 1,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  avatarCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ddd',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitial: {
+    fontWeight: 'bold',
+    color: '#555',
+  },
+  reviewerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+
+  reviewDate: {
+    fontSize: 12,
+    color: '#999',
+    marginLeft: 8,
+  },
+  reviewText: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#444',
+  },
+  noReview: {
+    fontStyle: 'italic',
+    color: '#666',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+
+  modalContent: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    width: '100%',
+    padding: 20,
+  },
+
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 10,
+    color: '#333',
+  },
+
+  modalInput: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 100,
+    fontSize: 16,
+    color: '#000',
+    textAlignVertical: 'top',
+  },
+
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 15,
+  },
+
+  cancelButton: {
+    marginRight: 10,
+  },
+
+  cancelText: {
+    color: '#d32f2f',
+    fontWeight: 'bold',
+  },
+
+  submitButton: {
+    backgroundColor: '#2e7d32',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 5,
+  },
+
+  submitText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+
+
 });
 
 export default SpotDetailsScreen;

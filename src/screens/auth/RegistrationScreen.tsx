@@ -10,13 +10,13 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
+import { useAuthStore } from '../../store/auth';
 
 const RegistrationScreen = ({ route, navigation }: any) => {
   const { userType } = route.params;
-  const { registerUser, sendOtpToEmail, verifyEmailOtp } = useAuth(); // You must implement these two new methods in your AuthContext
+  const { registerUser, sendOtpToEmail, verifyEmailOtp } = useAuthStore(); // You must implement these two new methods in your AuthContext
 
   const [isOtpSent, setIsOtpSent] = useState(false);
   const [isOtpVerified, setIsOtpVerified] = useState(false);
@@ -80,7 +80,7 @@ const RegistrationScreen = ({ route, navigation }: any) => {
     if (!email || !email.includes('@')) return;
 
     try {
-      await sendOtpToEmail(email); // call your backend to send OTP
+      await sendOtpToEmail(email);
       setIsOtpSent(true);
       setEmailError('');
     } catch (err: any) {
@@ -91,7 +91,7 @@ const RegistrationScreen = ({ route, navigation }: any) => {
 
   const handleVerifyOtp = async ({ email, otp }: { email: string; otp: string }) => {
     try {
-      await verifyEmailOtp(email, otp); // call backend to verify
+      await verifyEmailOtp(email, otp);
       setIsOtpVerified(true);
       setEmailVerifiedCheck('✅');
       setEmailError('');

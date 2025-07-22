@@ -8,10 +8,10 @@ import {
   SafeAreaView,
   ScrollView,
 } from 'react-native';
-import { useAuth } from '../../context/AuthContext';
+import { useAuthStore } from '../../store/auth';
 
 const UserTypeScreen = ({ navigation }: any) => {
-  const { setUserType } = useAuth();
+  const { setUserType } = useAuthStore();
 
   const userTypes = [
     {
